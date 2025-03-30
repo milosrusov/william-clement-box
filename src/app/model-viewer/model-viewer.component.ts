@@ -1,45 +1,48 @@
 import { Component, ElementRef, EventEmitter, Input, Output, SimpleChanges, ViewChild } from '@angular/core';
-import { Engine, Scene, ArcRotateCamera, HemisphericLight, Vector3 } from '@babylonjs/core';
+import { Engine, Scene, UniversalCamera, HemisphericLight, Vector3, CannonJSPlugin, Color4, StandardMaterial, Color3 } from '@babylonjs/core';
 import { ImportMeshAsync } from '@babylonjs/core';
 import '@babylonjs/loaders/glTF/2.0/glTFLoader';
+import * as CANNON from 'cannon-es';
+
 @Component({
   selector: 'app-model-viewer',
   templateUrl: './model-viewer.component.html',
   styleUrl: './model-viewer.component.scss',
-  standalone:false
+  standalone: false
 })
 export class ModelViewerComponent {
-
   @ViewChild('renderCanvas', { static: true }) canvasRef!: ElementRef<HTMLCanvasElement>;
 
-  @Input() modelPath: string = '/assets/Box.glb'; // Podrazumevana putanja do modela
-  @Input() height: string = 'calc(100vh - 120px)'; // Podrazumevana visina
-  @Input() antialias: boolean = true; // Antialiasing za Babylon.js engine
-  @Input() engineOptions?: any; // Opcionalne opcije za engine
-  @Input() adaptToDeviceRatio: boolean = false; // Prilagođavanje device ratio-u
-  @Input() sceneOptions?: any; // Opcionalne opcije za scenu
+  @Input() modelPath: string = '/assets/room.glb';
+  @Input() height: string = 'calc(100vh - 120px)';
+  @Input() antialias: boolean = true;
+  @Input() engineOptions = {
+    preserveDrawingBuffer: true,
+    stencil: true,
+    disableWebGL2Support: false // Forsiraj WebGL2
+  };
+
+  @Input() adaptToDeviceRatio: boolean = false;
+  @Input() sceneOptions?: any;
   @Input() cameraConfig: {
-    alpha?: number;
-    beta?: number;
-    radius?: number;
-    target?: Vector3;
-    wheelPrecision?: number;
-    panningSensibility?: number;
-    lowerRadiusLimit?: number;
-    upperRadiusLimit?: number;
-    panningInertia?: number;
+    speed?: number;
     inertia?: number;
-  } = {}; // Konfiguracija kamere
-  @Output() meshSelected = new EventEmitter<any>(); // Događaj za klik na mesh
+    eyeHeight?: number;
+    startPosition?: Vector3;
+    bounds?: { minX: number; maxX: number; minZ: number; maxZ: number };
+  } = {
+    speed: 0.1, // Povećana brzina za bolju responsivnost
+    inertia: 0.8, // Smanjena inercija za manje klizanja
+    eyeHeight: 1.6,
+    startPosition: new Vector3(0, 1.6, 0),
+    bounds: { minX: -20, maxX: 20, minZ: -20, maxZ: 20 }
+  };
+
+  @Output() meshSelected = new EventEmitter<any>();
 
   private engine!: Engine;
   private scene!: Scene;
-  private cameraState: {
-    alpha: number;
-    beta: number;
-    radius: number;
-    target: Vector3;
-  } | null = null;
+  private camera!: UniversalCamera;
   private isModelLoaded = false;
   private lastLoadedModelPath: string | null = null;
 
@@ -56,114 +59,116 @@ export class ModelViewerComponent {
   ngOnDestroy() {
     this.scene?.getEngine().dispose();
     window.removeEventListener('resize', this.handleResize);
-    this.cameraState = null;
-    this.isModelLoaded = false;
-    this.lastLoadedModelPath = null;
-    this.scene = undefined as any;
-    this.engine = undefined as any;
   }
 
   private initializeScene() {
     const canvas = this.canvasRef.nativeElement;
     if (!canvas) return;
 
-    // Inicijalizacija Babylon.js engine-a i scene
     this.engine = new Engine(canvas, this.antialias, this.engineOptions, this.adaptToDeviceRatio);
     this.scene = new Scene(this.engine, this.sceneOptions);
-
-    // Postavi osnovne scene postavke
+    this.scene.clearColor = new Color4(1, 1, 1, 1);
+    this.scene.enablePhysics(new Vector3(0, -1, 0), new CannonJSPlugin(undefined, undefined, CANNON)); // Još manja gravitacija
     this.scene.collisionsEnabled = true;
-    this.scene.gravity = new Vector3(0, -9.81, 0);
 
-    // Kreiraj kameru sa podrazumevanim ili prosleđenim vrednostima
-    const camera = new ArcRotateCamera(
-      'camera',
-      this.cameraConfig.alpha ?? Math.PI / 2,
-      this.cameraConfig.beta ?? Math.PI / 2.5,
-      this.cameraConfig.radius ?? 10,
-      this.cameraConfig.target ?? Vector3.Zero(),
-      this.scene
-    );
-    camera.attachControl(true);
-    camera.wheelPrecision = this.cameraConfig.wheelPrecision ?? 50;
-    camera.panningSensibility = this.cameraConfig.panningSensibility ?? 50;
-    camera.lowerRadiusLimit = this.cameraConfig.lowerRadiusLimit ?? 2;
-    camera.upperRadiusLimit = this.cameraConfig.upperRadiusLimit ?? 50;
-    camera.panningInertia = this.cameraConfig.panningInertia ?? 0.8;
-    camera.inertia = this.cameraConfig.inertia ?? 0.9;
+    const { speed, inertia, eyeHeight, startPosition, bounds } = this.cameraConfig;
+    this.camera = new UniversalCamera('camera', startPosition ?? new Vector3(0, 1.6, 0), this.scene);
+    this.camera.setTarget(new Vector3(0, eyeHeight ?? 1.6, 1));
+    this.camera.attachControl(canvas, true);
+    this.camera.speed = speed ?? 0.1;
+    this.camera.inertia = inertia ?? 0.8;
+    this.camera.angularSensibility = 2000;
+    this.camera.applyGravity = false; // Isključena gravitacija za glatkost
+    this.camera.checkCollisions = true;
+    this.camera.ellipsoid = new Vector3(0.15, (eyeHeight ?? 1.6) / 2, 0.15); // Smanjen ellipsoid za manje zapinjanja
 
-    // Vrati prethodno stanje kamere ako postoji
-    if (this.cameraState) {
-      camera.alpha = this.cameraState.alpha;
-      camera.beta = this.cameraState.beta;
-      camera.radius = this.cameraState.radius;
-      camera.setTarget(this.cameraState.target);
-    }
+    // this.camera.keysUp = [38];    // Up arrow
+    // this.camera.keysDown = [40];  // Down arrow
+    // this.camera.keysLeft = [37];  // Left arrow
+    // this.camera.keysRight = [39]; // Right arrow
 
-    // Osnovno osvetljenje
-    const light = new HemisphericLight('light', new Vector3(0, 1, 0), this.scene);
-    light.intensity = 0.7;
+     // Keyboard controls
+     this.camera.keysUp = [87];    // W
+     this.camera.keysDown = [83];  // S
+     this.camera.keysLeft = [65];  // A
+     this.camera.keysRight = [68]; // D
+ 
 
-    // Učitaj model
-    this.loadModel(this.scene);
+    this.scene.onBeforeRenderObservable.add(() => {
+      const adjustedEyeHeight = eyeHeight ?? 1.6;
+      const adjustedBounds = bounds ?? { minX: -20, maxX: 20, minZ: -20, maxZ: 20 };
+      // Fiksiraj visinu bez gravitacije
+      this.camera.position.y = adjustedEyeHeight;
+      const ellipsoidOffsetX = this.camera.ellipsoid.x;
+      const ellipsoidOffsetZ = this.camera.ellipsoid.z;
+      this.camera.position.x = Math.max(adjustedBounds.minX + ellipsoidOffsetX, Math.min(adjustedBounds.maxX - ellipsoidOffsetX, this.camera.position.x));
+      this.camera.position.z = Math.max(adjustedBounds.minZ + ellipsoidOffsetZ, Math.min(adjustedBounds.maxZ - ellipsoidOffsetZ, this.camera.position.z));
+    });
+
+    new HemisphericLight('light', new Vector3(0, 1, 0), this.scene).intensity = 0.7;
+
 
     this.scene.onPointerObservable.add((pointerInfo) => {
-
-      if(pointerInfo.type == 32) {
+      if (pointerInfo.type === 32) {
         const pickedMesh = pointerInfo.pickInfo?.pickedMesh;
-
         if (pickedMesh) {
-          // Sačuvaj stanje kamere
-          this.cameraState = {
-            alpha: camera.alpha,
-            beta: camera.beta,
-            radius: camera.radius,
-            target: camera.target.clone(),
-          };
-
-          const meshInfo = {
-            name: pickedMesh.name,
+          this.meshSelected.emit({
+            mesh: pickedMesh,
             position: pickedMesh.position.asArray(),
-          };
-
-          // Emituj događaj
-          this.meshSelected.emit(meshInfo);
+            pointerEvent: pointerInfo.event as PointerEvent
+          });
         }
-
       }
     });
+
+    this.loadModel(this.scene);
 
     this.engine.runRenderLoop(() => {
       this.scene.render();
     });
 
     window.addEventListener('resize', this.handleResize);
-
   }
 
   private loadModel(scene: Scene) {
     if (this.lastLoadedModelPath === this.modelPath && this.isModelLoaded) {
-      return; // Model je već učitan
+      return;
     }
-
-    //Ukloni stare mesheve (osim kamere i svetla)
+  
+    // Očisti postojeće mesheve osim svetla
     scene.meshes.forEach((mesh) => {
       if (!mesh.name.includes('light')) {
         mesh.dispose();
       }
     });
-
+  
     this.isModelLoaded = true;
     this.lastLoadedModelPath = this.modelPath;
-
-
+  
     ImportMeshAsync(this.modelPath, scene)
       .then((result) => {
-        console.log('Model successfully loaded:', result);
+
         result.meshes.forEach((mesh) => {
           mesh.checkCollisions = true;
           mesh.receiveShadows = true;
+
+          if (!mesh.material) {
+            const debugMat = new StandardMaterial("debugMat", scene);
+            debugMat.diffuseColor = new Color3(1, 0, 0); // Crvena boja za debug
+            mesh.material = debugMat;
+          }
         });
+  
+        // Izračunaj centar modela
+        const worldExtends = scene.getWorldExtends();
+        const modelCenter = worldExtends.min.add(worldExtends.max).scale(0.5);
+        const eyeHeight = this.cameraConfig.eyeHeight ?? 1.6;
+  
+        // Postavi poziciju kamere u centar modela na visini eyeHeight
+        this.camera.position = new Vector3(modelCenter.x, eyeHeight, modelCenter.z);
+  
+        // Postavi cilj kamere da gleda "ka unutra" (malo pomeranje po Z-osi)
+        this.camera.setTarget(new Vector3(modelCenter.x, eyeHeight, modelCenter.z + 0.1));
       })
       .catch((error: any) => {
         console.error('Error loading model:', error);
