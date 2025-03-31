@@ -24,7 +24,7 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      # Instalacija Angular CLI globalno (ako nije u package.json)
+      # Instalacija Angular CLI globalno
       - name: Install Angular CLI
         run: npm install -g @angular/cli
 
@@ -37,5 +37,5 @@ jobs:
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./dist  # Direktorijum gde je bildovana aplikacija
+          publish_dir: ./dist/william-clement-box  # Promeni na tačan podfolder unutar dist
           publish_branch: gh-pages  # Branch za GitHub Pages
