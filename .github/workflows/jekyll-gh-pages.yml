@@ -32,6 +32,10 @@ jobs:
       - name: Build Angular App
         run: ng build --base-href "/william-clement-box/" --output-path=dist
 
+      # Izlistavanje sadržaja dist foldera nakon build-a
+      - name: List dist folder contents
+        run: ls -laR dist/
+
       # Deploy na GitHub Pages
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
