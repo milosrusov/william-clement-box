@@ -41,5 +41,5 @@ jobs:
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./dist/william-clement-box  # Promeni na tačan podfolder unutar dist
+          publish_dir: ./dist  # Promeni na tačan podfolder unutar dist
           publish_branch: gh-pages  # Branch za GitHub Pages
