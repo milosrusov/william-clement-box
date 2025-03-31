@@ -11,9 +11,12 @@ import * as CANNON from 'cannon-es';
   standalone: false
 })
 export class ModelViewerComponent {
+
+  basePath = '/william-clement-box';
+  
   @ViewChild('renderCanvas', { static: true }) canvasRef!: ElementRef<HTMLCanvasElement>;
 
-  @Input() modelPath: string = '/assets/room.glb';
+  @Input() modelPath: string = basePath + '/assets/room.glb/assets/room.glb';
   @Input() height: string = 'calc(100vh - 120px)';
   @Input() antialias: boolean = true;
   @Input() engineOptions = {
