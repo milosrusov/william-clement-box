@@ -16,7 +16,7 @@ export class ModelViewerComponent {
   
   @ViewChild('renderCanvas', { static: true }) canvasRef!: ElementRef<HTMLCanvasElement>;
 
-  @Input() modelPath: string = basePath + '/assets/room.glb';
+  @Input() modelPath: string = this.basePath + '/assets/room.glb';
   @Input() height: string = 'calc(100vh - 120px)';
   @Input() antialias: boolean = true;
   @Input() engineOptions = {
